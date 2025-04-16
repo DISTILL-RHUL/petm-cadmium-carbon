@@ -1,11 +1,11 @@
+import json
 from matplotlib import pyplot
-import numpy,pandas
 
-from CdBURY.classes import Time,CadmiumMassIsotope,CadmiumFluxes,Perturbation,FluxType # type: ignore
-from CdBURY import CdBURY # type: ignore
+from CdBURY.classes import Time,CadmiumMassIsotope,CadmiumFluxes,Perturbation,FluxType
+from CdBURY import CdBURY
 
-from geochemistry_helpers import Sampling,GaussianProcess # type: ignore
-
+## Run CdBURY in a forward direction for a steady state and two perturbations
+# Create the intial conditions
 initial_seawater = CadmiumMassIsotope(1.0*8.36e11,-0.1)
 
 isotope_offsets = CadmiumFluxes(-0.1,
@@ -41,37 +41,56 @@ adjusted_isotope_offsets = CadmiumFluxes(input_balanced.isotope_delta,
                                             isotope_offsets.organic,
                                             isotope_offsets.sulphide)
 
-
+# Set the model timing
 time_configuration = Time(55.92,0.001,55.00,units="Myr")
-model = CdBURY.Model(time_configuration,
+
+# Create a steady state model
+model_steady = CdBURY.Model(time_configuration,
+                    initial_seawater,
+                    initial_fluxes,
+                    adjusted_isotope_offsets,
+                    dynamic_mass=False)
+
+# Simulate
+model_steady.solve()
+
+# Save
+with open("./data/output/steady_state.json","w") as steady_file:
+    json.dump(model_steady.to_json(),steady_file,indent=4)
+
+# Create a perturbation model
+model_perturb_down = CdBURY.Model(time_configuration,
                     initial_seawater,
                     initial_fluxes,
                     adjusted_isotope_offsets,
                     dynamic_mass=True)
 
+# Perturb a temporary decrease in organic flux
+model_perturb_down.change_flux(Perturbation(55.50,FluxType.organic,CadmiumMassIsotope(0.0,-0.8)))
+model_perturb_down.change_flux(Perturbation(55.30,FluxType.organic,CadmiumMassIsotope(initial_fluxes.organic,-0.8)))
 
-model.change_flux(Perturbation(55.50,FluxType.organic,CadmiumMassIsotope(0.0,-0.8)))
+# Simulate
+model_perturb_down.solve()
 
-model.solve()
+# Save
+with open("./data/output/perturbation_down.json","w") as steady_file:
+    json.dump(model_perturb_down.to_json(),steady_file,indent=4)
 
-figure,axes = pyplot.subplots(4,1,figsize=(5,5),sharex=True)
-axes[0].plot(time_configuration.as_array(),[flux.isotope_delta for flux in model.seawater][0:-1],zorder=3)
+# Create a perturbation model
+model_perturb_up = CdBURY.Model(time_configuration,
+                    initial_seawater,
+                    initial_fluxes,
+                    adjusted_isotope_offsets,
+                    dynamic_mass=True)
 
-axes[1].plot(time_configuration.as_array(),model.flux_multiplier[0:-1],zorder=3)
+# Perturb a temporary increase in organic flux
+model_perturb_up.change_flux(Perturbation(55.50,FluxType.organic,CadmiumMassIsotope(initial_fluxes.organic*2,-0.8)))
+model_perturb_up.change_flux(Perturbation(55.30,FluxType.organic,CadmiumMassIsotope(initial_fluxes.organic,-0.8)))
 
-axes[2].plot(time_configuration.as_array(),[flux.mass for flux in model.sulphide_flux][0:-1],zorder=3)
+# Simulate
+model_perturb_up.solve()
 
-axes[3].plot(time_configuration.as_array(),[flux.mass for flux in model.seawater][0:-1],zorder=3)
-axes[3].scatter(time_configuration.as_array(),[flux.mass for flux in model.seawater][0:-1],zorder=5)
+# Save
+with open("./data/output/perturbation_up.json","w") as steady_file:
+    json.dump(model_perturb_up.to_json(),steady_file,indent=4)
 
-
-axes[0].invert_xaxis()
-
-## Set y axis exponent to 0
-axes[0].get_yaxis().get_major_formatter().set_useOffset(False)
-
-axes[0].set_ylim((-0.5,0.5))
-
-pyplot.show()
-
-a = 5

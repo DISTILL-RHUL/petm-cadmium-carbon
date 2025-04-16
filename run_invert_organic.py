@@ -1,73 +1,11 @@
 import numpy,pandas,json
-
-from CdBURY.classes import Time,MultiTime,DynamicTime,CadmiumMassIsotope,CadmiumFluxes,Perturbation,FluxType # type: ignore
-from CdBURY import CdBURY # type: ignore
-
 from matplotlib import pyplot
 
-from geochemistry_helpers import Sampling,GaussianProcess # type: ignore
+from CdBURY.classes import Time,CadmiumMassIsotope,CadmiumFluxes,Perturbation,FluxType
+from CdBURY import CdBURY
 
-numpy.random.seed(2)
+from geochemistry_helpers import Sampling,GaussianProcess 
 
-## Data
-svalbard_data = pandas.read_excel("./data/input/cadmium_data.xlsx",usecols="A:I").dropna(subset=["δ114Cd(‰)"])
-arctic_data = pandas.read_excel("./data/input/cadmium_data.xlsx",usecols="K:S").dropna(subset=["δ114Cd(‰).1"])
-northsea_data = pandas.read_excel("./data/input/cadmium_data.xlsx",usecols="U:AC").dropna(subset=["δ114Cd(‰).2"])
-kheu_data = pandas.read_excel("./data/input/cadmium_data.xlsx",usecols="AI:AQ").dropna(subset=["δ114Cd(‰).3"])
-
-svalbard_data["2se"] = svalbard_data["2se"]
-arctic_data["2se.1"] = arctic_data["2se.1"]
-northsea_data["2se.2"] = northsea_data["2se.2"]
-kheu_data["2se.4"] = kheu_data["2se.4"]
-
-
-ages = numpy.concatenate((svalbard_data["Age model"],arctic_data["Age model.1"],northsea_data["Age model.2"],kheu_data["Age model.3"]))
-cd_x = numpy.arange(-2.0,2.0,0.001)
-number_of_samples = 20
-
-d114Cds = numpy.concatenate((svalbard_data["δ114Cd(‰)"],arctic_data["δ114Cd(‰).1"],northsea_data["δ114Cd(‰).2"],kheu_data["δ114Cd(‰).3"]))
-d114Cd_uncertainties = numpy.concatenate((svalbard_data["2se"]/2,arctic_data["2se.1"]/2,northsea_data["2se.2"]/2,kheu_data["2se.4"]/2))
-
-good_indices = numpy.where(d114Cds>=-0.6)
-
-cd_distributions = [Sampling.Distribution(cd_x,"Gaussian",(cd,uncertainty*1),location=age).normalise() for cd,uncertainty,age in zip(d114Cds[good_indices],d114Cd_uncertainties[good_indices],ages[good_indices],strict=True)]
-
-# Time
-sigmoid = lambda a,b,c,x0,x: -a/(1+numpy.exp(-b*(x-x0)))+(c+a)
-# sigmoid_test = sigmoid(0.0010,100.0,0.000005,55.83,numpy.linspace(55.91,55.68,1000))
-
-steps = [55.91]
-while steps[-1]>55.68:
-    step_length = sigmoid(0.0010,100.0,0.000005,55.83,steps[-1])
-    steps.append(steps[-1]-step_length)
-
-# time_configuration = DynamicTime(55.93,0.0001,55.68,units="Myr",min_step=0.0001/10,max_step=0.0001*2)
-# time_configuration = MultiTime(numpy.concatenate((high_resolution_steps,low_resolution_steps)),units="Myr")
-time_configuration = MultiTime(steps,units="Myr")
-
-# time_configuration = Time(55.93,0.001,55.68,units="Myr")
-model_ages = [ages,time_configuration.as_array()]
-data_interpolation_ages = [ages,time_configuration.as_padded_array()]
-
-# Gaussian Process
-gp = (GaussianProcess().constrain(cd_distributions)
-                        .setKernel("rbf",(5.0,0.050))
-                        .query(model_ages)
-                        .getSamples(number_of_samples)
-)
-
-# Save the gp
-gp.toJSON("./data/output/cadmium_gp.json")
-
-indices = range(0,number_of_samples)
-
-## Model
-random_mass_multiplier = numpy.random.uniform(0.2,5.0,len(indices))
-random_input_isotopes = numpy.random.uniform(0.0,0.4,len(indices))
-random_input_multiplier = numpy.random.uniform(0.5,2.0,len(indices))
-
-# seawaters = []
-# organics = []
 
 def determine_initial_organic_burial(first_three_d114Cds,data_resolution,initial_seawater,initial_fluxes,isotope_offsets):
     isotope_fluxes_0 = CadmiumFluxes(CadmiumMassIsotope(initial_fluxes.input,initial_seawater.isotope_delta+isotope_offsets.input),
@@ -79,7 +17,8 @@ def determine_initial_organic_burial(first_three_d114Cds,data_resolution,initial
     
     extra_organic_flux_0 = CdBURY.Model.calculate_organic_to_target(first_three_d114Cds[1],
                                                 initial_seawater,
-                                                isotope_fluxes_0)
+                                                isotope_fluxes_0,
+                                                data_resolution)
     organic_flux_per_year_0 = initial_fluxes.organic+extra_organic_flux_0/data_resolution
     if organic_flux_per_year_0<0:
         organic_flux_per_year_0 = 0
@@ -110,7 +49,8 @@ def determine_initial_organic_burial(first_three_d114Cds,data_resolution,initial
     
     extra_organic_flux_1 = CdBURY.Model.calculate_organic_to_target(first_three_d114Cds[2],
                                                 next_seawater_isotopes,
-                                                isotope_fluxes_1)
+                                                isotope_fluxes_1,
+                                                data_resolution)
     organic_flux_per_year_1 = organic_flux_per_year_0+extra_organic_flux_1/data_resolution
     if organic_flux_per_year_1<0:
         organic_flux_per_year_1 = 0
@@ -118,38 +58,138 @@ def determine_initial_organic_burial(first_three_d114Cds,data_resolution,initial
     return (organic_flux_per_year_0 + organic_flux_per_year_1)/2
 
 
+numpy.random.seed(2) # for repeatability
+
+#region: Data Processing
+## Data
+# Load each site individually
+svalbard_data = pandas.read_excel("./data/input/cadmium_data.xlsx",usecols="A:I").dropna(subset=["δ114Cd(‰)"])
+arctic_data = pandas.read_excel("./data/input/cadmium_data.xlsx",usecols="K:S").dropna(subset=["δ114Cd(‰).1"])
+northsea_data = pandas.read_excel("./data/input/cadmium_data.xlsx",usecols="U:AC").dropna(subset=["δ114Cd(‰).2"])
+kheu_data = pandas.read_excel("./data/input/cadmium_data.xlsx",usecols="AI:AQ").dropna(subset=["δ114Cd(‰).3"])
+
+# Collate the ages
+ages = numpy.concatenate((svalbard_data["Age model"],arctic_data["Age model.1"],northsea_data["Age model.2"],kheu_data["Age model.3"]))
+
+# Specify the number of samples to draw
+number_of_samples = 10000
+
+# Specify the bins for cd and d13c distributions
+d114cd_x = numpy.arange(-10.0,10.0,0.001)
+d13c_x = numpy.arange(-40.0,-20.0,0.001)
+
+# Collate all values into arrays
+d114Cds = numpy.concatenate((svalbard_data["δ114Cd(‰)"],arctic_data["δ114Cd(‰).1"],northsea_data["δ114Cd(‰).2"],kheu_data["δ114Cd(‰).3"]))
+d114Cd_uncertainties = numpy.concatenate((svalbard_data["2se"]/2,arctic_data["2se.1"]/2,northsea_data["2se.2"]/2,kheu_data["2se.4"]/2))
+d13c = numpy.concatenate((svalbard_data["δ13Corg(‰)"],arctic_data["δ13Corg(‰).1"],northsea_data["δ13Corg(‰).2"],kheu_data["δ13Corg(‰).3"]))
+
+# Keep data only where not outliers
+good_indices = numpy.where(d114Cds>=-0.6)
+
+# Create distributions
+d114cd_distributions = [Sampling.Distribution(d114cd_x,"Gaussian",(cd,uncertainty*1),location=age).normalise() for cd,uncertainty,age in zip(d114Cds[good_indices],d114Cd_uncertainties[good_indices],ages[good_indices],strict=True)]
+d13c_distributions = [Sampling.Distribution(d13c_x,"Gaussian",(cd,0.1),location=age).normalise() for cd,age in zip(d13c,ages)]
+#endregion: Data Processing
+
+#region: Gaussian Processes
+# Time
+time_configuration = Time(55.92,0.001,55.68,units="Myr")
+
+model_ages = [ages,time_configuration.as_array()]
+data_interpolation_ages = [ages,time_configuration.as_padded_array()]
+
+# Specify the cadmium isotope hyperparameters - 2.0‰ and 0.05Myr (50kyr)
+d114cd_gp_hyperparameters = (2.0,0.05)
+
+# Create gps for d114Cd and d13C
+d114cd_gp = (GaussianProcess().constrain(d114cd_distributions)
+                        .setKernel("rbf",d114cd_gp_hyperparameters)
+                        .query(data_interpolation_ages)
+                        .getSamples(number_of_samples)
+)
+d13c_gp = (GaussianProcess().constrain(d13c_distributions)
+                        .setKernel("rbf",d114cd_gp_hyperparameters) # Use the same hyperparameters as d114Cd
+                        .query(data_interpolation_ages)
+                        .getSamples(number_of_samples)
+)
+
+#endregion: Gaussian Processes
+
+
+#region: Model Setup
+# Pick randomised values for the initial conditions
+# The multipliers are relative to modern, whereas the input isotope is an absolute value
+random_mass_multiplier = numpy.random.uniform(0.333,3.0,number_of_samples)
+random_input_multiplier = numpy.random.uniform(0.333,3.0,number_of_samples)
+random_input_isotopes = numpy.random.uniform(0.0,0.4,number_of_samples)
+
+# Create some empty lists to store the results
+mass_multiplier_record = []
+input_isotopes_record = []
+input_multiplier_record = []
+
+organic_to_c = (100/1e3)/5287500  # GtC/mol organic
+#endregion: Model Setup
+
+#region: Model
+indices = range(0,number_of_samples)
 models = []
 
 for index in indices:
+    # Print the index every 100 iterations
     if index%100==0:
         print(index)
-        
-    d114Cd_evolution = [gp.samples[0][index],gp.samples[1][index]]
-    
-    initial_seawater = CadmiumMassIsotope(random_mass_multiplier[index]*8.36e11,d114Cd_evolution[-1][0])
 
+    # Calculate the absolute inventory of Cd from the mass multiplier
+    initial_cd_inventory = random_mass_multiplier[index]*8.36e11
+
+    # Calculate the absolute initial input flux of Cd from the input multiplier
+    initial_input_flux = 30000000.0 * random_input_multiplier[index]
+
+    # Calculate the residence time of Cd in the ocean (for reference)
+    residence_time = initial_cd_inventory/initial_input_flux
+
+    # Extract a single sample of d114cd
+    d114cd_evolution: list[numpy.ndarray] = [d114cd_gp.samples[0][index],d114cd_gp.samples[1][index]] #type: ignore
+    
+    # Combine the mass and isotope ratio of seawater into a single object
+    initial_seawater = CadmiumMassIsotope(initial_cd_inventory,d114cd_evolution[-1][0])
+
+    # Compile the isotope offsets into a single object
     isotope_offsets = CadmiumFluxes(initial_seawater.isotope_delta-random_input_isotopes[index],
                                     0.0,
                                     -0.55,
                                     0.0,
                                     -0.80,
                                     0.0)
+    
+    # Record the input isotopes and mass multiplier
+    input_isotopes_record.append(initial_seawater.isotope_delta-random_input_isotopes[index])
+    input_multiplier_record.append(random_input_multiplier[index])
+    mass_multiplier_record.append(random_mass_multiplier[index])
 
+    # Combine the proportions of each flux (for steady state) into a single object
+    # The proportions are relative to the input flux
     flux_proportions = CadmiumFluxes(1.0,
                                 0.01,
                                 0.02,
                                 0.01,
                                 0.104375,
                                 0.84875)
+    # Ensure the proportions sum exactly to 1.0
     flux_proportions.sulphide = flux_proportions.input-(flux_proportions.oxyhydroxide+flux_proportions.carbonate+flux_proportions.clay+flux_proportions.organic)
 
-    input_flux = random_input_multiplier[index]*30000000.0
+    # Compute the absolute fluxes from the relative values
+    input_flux = initial_input_flux
     initial_fluxes = CadmiumFluxes(input_flux*flux_proportions.input,
                                     input_flux*flux_proportions.oxyhydroxide,
                                     input_flux*flux_proportions.carbonate,
                                     input_flux*flux_proportions.clay,
                                     input_flux*flux_proportions.organic,
                                     input_flux*flux_proportions.sulphide)
+    
+    # Make the steady state work isotopically as well as for mass
+    # This may not be possible for all combinations of fluxes/parameters - if not, skip this iteration
     try:
         (new_organic_flux,new_sulphide_flux) = CdBURY.Model.rebalance_with_organic(initial_seawater,
                                                                                 initial_fluxes,
@@ -157,6 +197,7 @@ for index in indices:
     except:
         continue
 
+    # Compile the adjusted fluxes into a single object
     adjusted_initial_fluxes = CadmiumFluxes(initial_fluxes.input,
                                             initial_fluxes.oxyhydroxide,
                                             initial_fluxes.carbonate,
@@ -164,73 +205,68 @@ for index in indices:
                                             new_organic_flux,
                                             new_sulphide_flux)
     
+    # Create a model object
     model = CdBURY.Model(time_configuration,
                         initial_seawater,
                         adjusted_initial_fluxes,
                         isotope_offsets)
-    
-    match time_configuration:
-        case Time():
-            initial_organic_flux = determine_initial_organic_burial(d114Cd_evolution[-1],
-                                                                model.time.step_in_yr,
-                                                                initial_seawater,
-                                                                adjusted_initial_fluxes,
-                                                                isotope_offsets)
-        case DynamicTime():
-            initial_organic_flux = determine_initial_organic_burial(d114Cd_evolution[-1],
-                                                                model.time.initial_step*model.time.units,
-                                                                initial_seawater,
-                                                                adjusted_initial_fluxes,
-                                                                isotope_offsets)
-        case MultiTime():
-            initial_organic_flux = determine_initial_organic_burial(d114Cd_evolution[-1],
-                                                                model.time.initial_step_in_yr,
-                                                                initial_seawater,
-                                                                adjusted_initial_fluxes,
-                                                                isotope_offsets)
-    
-    
+
+    # Do a single RK4 step - changing organic to match d114cd
+    averaged_fluxes = model.invert_rk4_step_organic(model.get_fluxes(0),
+                            initial_seawater,
+                            0.0,
+                            0,
+                            d114cd_evolution[-1])
+
+    # Compile the new fluxes - with non steady state organic carbon burial to drive the initial trend in d114cd
     final_initial_fluxes = CadmiumFluxes(adjusted_initial_fluxes.input,
                                         adjusted_initial_fluxes.oxyhydroxide,
                                         adjusted_initial_fluxes.carbonate,
                                         adjusted_initial_fluxes.clay,
-                                        initial_organic_flux,
+                                        averaged_fluxes.organic.mass,
                                         adjusted_initial_fluxes.sulphide)
     
+    # Make sure the organic flux is positive
     if final_initial_fluxes.organic<=0:
         continue
     
+    # Create a new model object with the new fluxes
     model = CdBURY.Model(time_configuration,
                         initial_seawater,
                         final_initial_fluxes,
                         isotope_offsets)
     
-    model.invert(model_ages[-1],d114Cd_evolution[-1],FluxType.organic)
-
-    # figure,axes = pyplot.subplots(3,1,sharex=True)
-    # axes[0].plot(model_ages[-1],d114Cd_evolution[-1],zorder=3,color="k")
-    # axes[0].plot(model.time.as_array()[:-1],[flux.isotope_delta for flux in model.seawater[:-1]],zorder=3,color="r")
-    # axes[0].scatter(model.time.as_array()[:-1],[flux.isotope_delta for flux in model.seawater[:-1]],zorder=3,color="purple")
-
-    # axes[1].plot(model.time.as_array()[:-1],[flux.mass for flux in model.seawater[:-1]],zorder=3,color="r")
-
-    # # axes[2].scatter(model.time.as_array(),[flux.mass for flux in model.organic_flux][0:-1],zorder=3,color="b")
-    # axes[2].plot(model.time.as_array()[:-1],[flux.mass for flux in model.organic_flux[:-1]],zorder=3,color="r")
-
-    # gp.plotConstraints(color="black",axis=axes[0])
-
-    # axes[0].invert_xaxis()
-
+    # Run the full inversion using the Runge-Kutta 4th order method
+    model.invert_rk4(d114cd_evolution[-1],
+                     FluxType.organic)
+    # Append the model to the storage list if it is valid
     models.append(model)
 
+#endregion: Model
 
+#region: Save Results
+# Save the GPs
+d114cd_gp.toJSON("./data/output/d114cd_gp.json")
+d13c_gp.toJSON("./data/output/d13c_gp.json")
+
+original_initial_conditions = {
+    "input_isotopes": input_isotopes_record,
+    "mass_multiplier": mass_multiplier_record,
+    "input_multiplier": input_multiplier_record,
+}
+
+# Save the original initial conditions
+with open("./data/output/original_initial_conditions.json","w") as file:
+    json.dump(original_initial_conditions,file,indent=4)
+
+# The model impements a to_json method, which returns a dictionary of the model parameters
 model_json = []
 for model in models:
     model_json.append(model.to_json())
 
 # Write to file
+# Save as the prior
 with open("./data/output/invert_organic_prior_results.json","w") as file:
     json.dump(model_json,file,indent=4)
+#endregion: Save Results
 
-
-a = 5

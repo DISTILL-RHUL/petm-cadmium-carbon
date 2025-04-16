@@ -1,22 +1,18 @@
 import json,numpy,pandas
-from CdBURY import CdBURY # type: ignore
+from CdBURY import CdBURY
 
 model_json = json.load(open("./data/output/invert_organic_prior_results.json"))
 time = model_json[0]["time"]
 time_step_length = numpy.abs(numpy.diff(numpy.array(time)*model_json[0]["time_multiplier"]))
 timestep = time[1]-time[0]
-subset_start = 15
-subset_end = -1
-
-subset_time = time[subset_start:subset_end]
 
 organic_to_c = (100/1e3)/5287500  # GtC/mol organic
 
-excess_organic_burial = [((numpy.array(model["organic_mass"][subset_start:subset_end])/model["organic_mass"][subset_end])-1.0) for model in model_json]
+excess_organic_burial = [((numpy.array(model["organic_mass"])/model["organic_mass"][0])-1.0) for model in model_json]
 excess_means = [numpy.mean(excess) for excess in excess_organic_burial]
 
 flux_multipliers = [numpy.cumprod(1.0+numpy.array(model["flux_multiplier"])) for model in model_json]
-organic_burial_variable_stoichiometry = [(model["organic_mass"]*time_step_length)/flux_multiplier[:-2] for model,flux_multiplier in zip(model_json,flux_multipliers,strict=True)]
+organic_burial_variable_stoichiometry = [(model["organic_mass"]*time_step_length)/flux_multiplier[:-1] for model,flux_multiplier in zip(model_json,flux_multipliers,strict=True)]
 total_organic_burial_variable_stoichiometry = [numpy.sum(organic_burial) for organic_burial in organic_burial_variable_stoichiometry]
 total_c_burial = [organic_burial*organic_to_c for organic_burial in total_organic_burial_variable_stoichiometry]
 
@@ -39,9 +35,6 @@ posterior_model_json = []
 for model in model_json:
     if all(numpy.array(model["organic_mass"])>0) and all(numpy.array(model["seawater_mass"])>0):
         posterior_model_json.append(model)
-    else:
-        if not all(numpy.array(model["seawater_mass"])>0):
-            a = 5
 
 with open("./data/output/invert_organic_posterior_results.json","w") as file:
     json.dump(posterior_model_json,file)
