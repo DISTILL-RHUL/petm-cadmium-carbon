@@ -1,10 +1,13 @@
-import numpy,pandas,json
+import numpy,pandas,json,sys
 from matplotlib import pyplot
 
 from CdBURY.classes import Time,CadmiumMassIsotope,CadmiumFluxes,Perturbation,FluxType
 from CdBURY import CdBURY
 
-from geochemistry_helpers import Sampling,GaussianProcess 
+from geochemistry_helpers import Sampling,GaussianProcess
+
+sys.path.append("./code/utility")
+from load_data import load_cadmium,split_data_by_site,load_carbon
 
 
 def determine_initial_organic_burial(first_three_d114Cds,data_resolution,initial_seawater,initial_fluxes,isotope_offsets):
@@ -57,19 +60,16 @@ def determine_initial_organic_burial(first_three_d114Cds,data_resolution,initial
 
     return (organic_flux_per_year_0 + organic_flux_per_year_1)/2
 
-
 numpy.random.seed(2) # for repeatability
 
 #region: Data Processing
 ## Data
-# Load each site individually
-svalbard_data = pandas.read_excel("./data/input/cadmium_data.xlsx",usecols="A:I").dropna(subset=["δ114Cd(‰)"])
-arctic_data = pandas.read_excel("./data/input/cadmium_data.xlsx",usecols="K:S").dropna(subset=["δ114Cd(‰).1"])
-northsea_data = pandas.read_excel("./data/input/cadmium_data.xlsx",usecols="U:AC").dropna(subset=["δ114Cd(‰).2"])
-kheu_data = pandas.read_excel("./data/input/cadmium_data.xlsx",usecols="AI:AQ").dropna(subset=["δ114Cd(‰).3"])
+d114cd_data = load_cadmium()
+svalbard_cd_data, arctic_cd_data, northsea_cd_data, kheu_cd_data = split_data_by_site(d114cd_data)
 
-# Collate the ages
-ages = numpy.concatenate((svalbard_data["Age model"],arctic_data["Age model.1"],northsea_data["Age model.2"],kheu_data["Age model.3"]))
+d13c_data = load_carbon()
+svalbard_c_data, arctic_c_data, northsea_c_data, kheu_c_data = split_data_by_site(d13c_data)
+
 
 # Specify the number of samples to draw
 number_of_samples = 10000
@@ -78,22 +78,24 @@ number_of_samples = 10000
 d114cd_x = numpy.arange(-10.0,10.0,0.001)
 d13c_x = numpy.arange(-40.0,-20.0,0.001)
 
-# Collate all values into arrays
-d114Cds = numpy.concatenate((svalbard_data["δ114Cd(‰)"],arctic_data["δ114Cd(‰).1"],northsea_data["δ114Cd(‰).2"],kheu_data["δ114Cd(‰).3"]))
-d114Cd_uncertainties = numpy.concatenate((svalbard_data["2se"]/2,arctic_data["2se.1"]/2,northsea_data["2se.2"]/2,kheu_data["2se.4"]/2))
-d13c = numpy.concatenate((svalbard_data["δ13Corg(‰)"],arctic_data["δ13Corg(‰).1"],northsea_data["δ13Corg(‰).2"],kheu_data["δ13Corg(‰).3"]))
+# Collate values into arrays
+ages = d114cd_data["Age model"].values
+d114Cds = d114cd_data["δ114Cd(‰)"].values
+d114Cd_uncertainties = d114cd_data["δ114Cd (2σ)"].values/2  # Convert from 2σ to 1σ
+
+d13c = d13c_data["δ13Corg(‰)"].values
 
 # Keep data only where not outliers
 good_indices = numpy.where(d114Cds>=-0.6)
 
 # Create distributions
 d114cd_distributions = [Sampling.Distribution(d114cd_x,"Gaussian",(cd,uncertainty*1),location=age).normalise() for cd,uncertainty,age in zip(d114Cds[good_indices],d114Cd_uncertainties[good_indices],ages[good_indices],strict=True)]
-d13c_distributions = [Sampling.Distribution(d13c_x,"Gaussian",(cd,0.1),location=age).normalise() for cd,age in zip(d13c,ages)]
+d13c_distributions = [Sampling.Distribution(d13c_x,"Gaussian",(c,0.1),location=age).normalise() for c,age in zip(d13c,d13c_data["Age model"].values,strict=True)]
 #endregion: Data Processing
 
 #region: Gaussian Processes
 # Time
-time_configuration = Time(55.92,0.001,55.68,units="Myr")
+time_configuration = Time(55.905,0.001,55.68,units="Myr")
 
 model_ages = [ages,time_configuration.as_array()]
 data_interpolation_ages = [ages,time_configuration.as_padded_array()]

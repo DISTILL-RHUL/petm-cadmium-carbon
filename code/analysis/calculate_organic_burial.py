@@ -52,16 +52,18 @@ total_excess_organic_burial_variable = [numpy.sum(excess_organic_burial) for exc
 
 excess_organic_burial_variable_per_year = [excess_organic_burial/time_step_length for excess_organic_burial in excess_organic_burial_variable]
 
-for model, burial, excess_burial, total_burial, total_excess_burial in zip(model_json,
+for model, burial, excess_burial, total_burial, total_excess_burial, total_excess_burial_constant in zip(model_json,
                                                                                   organic_burial_variable,
                                                                                   excess_organic_burial_variable,
                                                                                   total_organic_burial_variable,
                                                                                   total_excess_organic_burial_variable,
+                                                                                    total_excess_organic_burial_constant,
                                                                                   strict=True):
     model["organic_burial"] = list(burial)
     model["excess_organic_burial"] = list(excess_burial)
     model["total_organic_burial"] = float(total_burial)
     model["total_excess_organic_burial"] = float(total_excess_burial)
+    model["total_excess_organic_burial_constant"] = float(total_excess_burial_constant)
 
 # Save the model with the new variables
 with open("./data/output/invert_organic_posterior_results_with_burial.json","w") as file:

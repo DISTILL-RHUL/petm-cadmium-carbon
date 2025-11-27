@@ -4,7 +4,6 @@ from CdBURY import CdBURY
 model_json = json.load(open("./data/output/invert_organic_prior_results.json"))
 time = model_json[0]["time"]
 time_step_length = numpy.abs(numpy.diff(numpy.array(time)*model_json[0]["time_multiplier"]))
-timestep = time[1]-time[0]
 
 organic_to_c = (100/1e3)/5287500  # GtC/mol organic
 
@@ -39,6 +38,7 @@ for model in model_json:
 with open("./data/output/invert_organic_posterior_results.json","w") as file:
     json.dump(posterior_model_json,file)
 
+flux_multipliers = [numpy.cumprod(1.0+numpy.array(model["flux_multiplier"])) for model in posterior_model_json]
 
 useful_prior_metrics = pandas.DataFrame()
 useful_prior_metrics["time"] = list(time[:-1])
@@ -57,6 +57,11 @@ organic_flux = [model["organic_mass"] for model in model_json]
 useful_prior_metrics["organic_flux_median"] = numpy.median(organic_flux,axis=0)
 useful_prior_metrics["organic_flux_lower_quantile"] = numpy.percentile(organic_flux,2.5,axis=0)
 useful_prior_metrics["organic_flux_upper_quantile"] = numpy.percentile(organic_flux,97.5,axis=0)
+
+organic_flux_per_yr = [(numpy.array(model["organic_mass"])*organic_to_c)/flux_multiplier[:-1] for model,flux_multiplier in zip(posterior_model_json,flux_multipliers,strict=True)]
+useful_prior_metrics["organic_flux_per_yr_median"] = numpy.median(organic_flux_per_yr,axis=0)
+useful_prior_metrics["organic_flux_per_yr_lower_quantile"] = numpy.percentile(organic_flux_per_yr,2.5,axis=0)
+useful_prior_metrics["organic_flux_per_yr_upper_quantile"] = numpy.percentile(organic_flux_per_yr,97.5,axis=0)
 
 useful_prior_metrics.to_excel("./data/output/invert_organic_prior_metrics.xlsx")
 
@@ -83,6 +88,10 @@ useful_posterior_metrics["relative_organic_flux_median"] = numpy.median(relative
 useful_posterior_metrics["relative_organic_flux_lower_quantile"] = numpy.percentile(relative_organic_flux,2.5,axis=0)
 useful_posterior_metrics["relative_organic_flux_upper_quantile"] = numpy.percentile(relative_organic_flux,97.5,axis=0)
 
+organic_flux_per_yr = [(numpy.array(model["organic_mass"])*organic_to_c)/flux_multiplier[:-1] for model,flux_multiplier in zip(posterior_model_json,flux_multipliers,strict=True)]
+useful_posterior_metrics["organic_flux_per_yr_median"] = numpy.median(organic_flux_per_yr,axis=0)
+useful_posterior_metrics["organic_flux_per_yr_lower_quantile"] = numpy.percentile(organic_flux_per_yr,2.5,axis=0)
+useful_posterior_metrics["organic_flux_per_yr_upper_quantile"] = numpy.percentile(organic_flux_per_yr,97.5,axis=0)
 
 useful_posterior_metrics.to_excel("./data/output/invert_organic_posterior_metrics.xlsx")
 
