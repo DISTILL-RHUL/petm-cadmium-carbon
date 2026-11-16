@@ -1,8 +1,10 @@
 import pandas
 
 def load_cadmium(data_directory="./data/"):
-    d114cd_data  = pandas.read_excel(data_directory+"/input/cadmium_data.xlsx",usecols="A:H").dropna(subset=["δ114Cddetrital-corrected"])
-    d114cd_data["δ114Cd(‰)"] = d114cd_data["δ114Cddetrital-corrected"]
+    d114cd_data  = pandas.read_excel(data_directory+"/input/cadmium_data.xlsx",usecols="A:H").dropna(subset=["δ114Cdnon-detr."])
+
+    d114cd_data["δ114Cd(‰)"] = d114cd_data["δ114Cdnon-detr."]
+    d114cd_data["δ114Cd (2σ)"] = d114cd_data["(2σ)prop."]
 
     return d114cd_data
 
