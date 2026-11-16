@@ -42,7 +42,7 @@ adjusted_isotope_offsets = CadmiumFluxes(input_balanced.isotope_delta,
                                             isotope_offsets.sulphide)
 
 # Set the model timing
-time_configuration = Time(55.92,0.001,55.00,units="Myr")
+time_configuration = Time(55.95,0.001,55.65,units="Myr")
 
 # Create a steady state model
 model_steady = CdBURY.Model(time_configuration,
@@ -66,8 +66,8 @@ model_perturb_down = CdBURY.Model(time_configuration,
                     dynamic_mass=True)
 
 # Perturb a temporary decrease in organic flux
-model_perturb_down.change_flux(Perturbation(55.50,FluxType.organic,CadmiumMassIsotope(0.0,-0.8)))
-model_perturb_down.change_flux(Perturbation(55.30,FluxType.organic,CadmiumMassIsotope(initial_fluxes.organic,-0.8)))
+model_perturb_down.change_flux(Perturbation(55.89999,FluxType.organic,CadmiumMassIsotope(0.0,-0.8)))
+model_perturb_down.change_flux(Perturbation(55.79999,FluxType.organic,CadmiumMassIsotope(initial_fluxes.organic,-0.8)))
 
 # Simulate
 model_perturb_down.solve()
@@ -84,8 +84,8 @@ model_perturb_up = CdBURY.Model(time_configuration,
                     dynamic_mass=True)
 
 # Perturb a temporary increase in organic flux
-model_perturb_up.change_flux(Perturbation(55.50,FluxType.organic,CadmiumMassIsotope(initial_fluxes.organic*2,-0.8)))
-model_perturb_up.change_flux(Perturbation(55.30,FluxType.organic,CadmiumMassIsotope(initial_fluxes.organic,-0.8)))
+model_perturb_up.change_flux(Perturbation(55.90,FluxType.organic,CadmiumMassIsotope(initial_fluxes.organic*2,-0.8)))
+model_perturb_up.change_flux(Perturbation(55.80,FluxType.organic,CadmiumMassIsotope(initial_fluxes.organic,-0.8)))
 
 # Simulate
 model_perturb_up.solve()
