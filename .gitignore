@@ -3,3 +3,11 @@ __pycache__/
 data/
 figures/
 old/
+code/analysis/calculate_invert_organic_metrics_offset.py
+code/analysis/calculate_organic_burial_OFFSET.py
+code/analysis/gp_basis.py
+code/analysis/run_invert_organic_offset.py
+code/plotting/plot_d114cd_uncertainty_comparison.ipynb
+ode/plotting/plot_invert_organic_presentation.ipynb
+code/plotting/plot_total_burial_OFFSET.ipynb
+test.png
